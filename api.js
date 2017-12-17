@@ -25,7 +25,6 @@ function startExpress(conn) {
     r.db('noiv')
       .table('spawns')
       .filter(r.row('expire_time').gt(Date.now()))
-      .limit(100)
       .run(conn, (err, cursor) => {
         if (err) throw err;
 
