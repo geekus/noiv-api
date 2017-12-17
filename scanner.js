@@ -1,24 +1,9 @@
 'use strict';
 
-const express = require('express');
-const app = express();
+let connection;
 
-const server = require('http').createServer(app);
-const io = require('socket.io')(server);
-
-const bodyParser = require('body-parser');
-app.use(bodyParser.json());
-
-
-var connection;
 const puppeteer = require('puppeteer');
-
-// const r = require('./rethinkdb.js');
 const r = require('rethinkdb');
-
-function alertFilter(list) {
-  return list.filter(item => item.iv > 80);
-};
 
 function startScanning(conn) {
 
@@ -30,7 +15,11 @@ function startScanning(conn) {
       ]
     });
 
+    console.log('Browser launched')
+
     const page = await browser.newPage();
+
+    console.log('Opened new page')
     // await page.setRequestInterception(true);
     //
     // page.on('request', request => {
@@ -41,29 +30,24 @@ function startScanning(conn) {
     // });
 
     page.on('response', response => {
-      // console.log('on response');
       response
         .json()
         .then(json => {
-          const alerts = alertFilter(json.pokemons);
+          const spawns = json.pokemons
+            .filter(p => p.spawn_id)
+            .map(s => {
+              return Object.assign({}, s, {id: s.encounter_id});
+            });
 
-          if (alerts.length) {
-  //           console.log(`${alerts.map(alert => (
-  //             `${alert.pokemon_name} ${alert.iv}
-  // `
-  //           ))}`);
-            console.log('got alerts!');
-
-            r
-              .table('spawns')
+          if (spawns.length) {
+            r.table('spawns')
               .getAll()
               .delete()
               .run(conn)
               .then((result) => {
-                console.log('deleted all', result);
                 r
                   .table('spawns')
-                  .insert(alerts)
+                  .insert(spawns, {conflict: 'update'})
                   .run(conn)
                   .then((result) => {
                     console.log('inserted spawns', result);
@@ -103,38 +87,6 @@ function startScanning(conn) {
     // await browser.close();
   })();
 
-
-  r.db('noiv').table('spawns')
-    .changes()
-    .run(conn, function(err, cursor){
-      if (err) throw err;
-      io.sockets.on('connection', function(socket){
-        cursor.each(function(err, row) {
-          if(err) throw err;
-          io.sockets.emit('spawns_updated', row);
-        });
-      });
-  });
-
-
-
-
-
-  app.get('/spawns', function(req, res){
-      res.header("Content-Type", "application/json");
-      r.db('noiv').table('spawns')
-          .limit(30)
-          .run(conn, function(err, cursor) {
-              if (err) throw err;
-              cursor.toArray(function(err, result) {
-                  if (err) throw err;
-                  res.send(result);
-              });
-      });
-  });
-
-  server.listen(3000);
-
 }
 
 const host = process.env.RETHINK_PORT_28015_TCP_ADDR || 'rethinkdb';
@@ -142,19 +94,16 @@ const port = process.env.RETHINK_PORT_28015_TCP_PORT || '28015';
 const db = process.env.RETHINK_PORT_28015_TCP_DB || 'noiv';
 
 const config = {
-    rethinkdb: {
-        host: host,
-        port: port,
-        db: db
-    },
-    express: {
-        port: 3000
-    }
+  rethinkdb: {
+    host: host,
+    port: port,
+    db: db
+  },
 };
 
 
 /*
- * Create tables/indexes then start express
+ * Create tables/indexes then start scanning
  */
 r.connect(config.rethinkdb, function(err, conn) {
   if (err) {
@@ -165,31 +114,31 @@ r.connect(config.rethinkdb, function(err, conn) {
 
   console.log('Connected successfully to rethinkdb');
 
-  r.table('spawns').indexWait().run(conn).then(function(err, result) {
-    console.log("Table and index are available, starting express...");
+  r.table('spawns').indexWait().run(conn).then((err, result) => {
+    console.log("Table and index are available, start scanning!");
+
     startScanning(conn);
-  }).error(function(err) {
+  }).error((err) => {
     // The database/table/index was not available, create them
-    r.dbCreate(config.rethinkdb.db).run(conn).finally(function() {
-      return r.tableCreate('spawns').run(conn)
-    }).finally(function() {
+    r.dbCreate(config.rethinkdb.db).run(conn).finally(() => {
+      return r.tableCreate('spawns').run(conn);
+    }).finally(() => {
       r.table('spawns').indexCreate('location', {geo: true}).run(conn);
-    }).finally(function(result) {
-      r.table('spawns').indexWait().run(conn)
-    }).then(function(result) {
+    }).finally((result) => {
+      r.table('spawns').indexWait().run(conn);
+    }).then((result) => {
       console.log("Table and index are available, starting express...");
+
       startScanning(conn);
-      // conn.close();
-    }).error(function(err) {
+    }).error((err) => {
       if (err) {
         console.log("Could not wait for the completion of the index `spawns`");
         console.log(err);
         process.exit(1);
       }
-      console.log("Table and index are available, starting express...");
+
+      console.log("Table and index are available, start scanning!");
       startScanning(conn);
-      // conn.close();
     });
   });
 });
-

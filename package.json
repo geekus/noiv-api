@@ -4,13 +4,17 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start:api": "nodemon --watch api.js --exec \"node api\"",
+    "start:scanner": "node scanner"
   },
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "dependencies": {
     "body-parser": "^1.18.2",
     "express": "^4.16.2",
+    "left-pad": "^1.2.0",
+    "nodemon": "^1.13.3",
     "puppeteer": "^0.13.0",
     "rethinkdb": "^2.3.3",
     "socket.io": "^2.0.4"
