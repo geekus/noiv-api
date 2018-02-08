@@ -13,6 +13,8 @@
   "dependencies": {
     "body-parser": "^1.18.2",
     "express": "^4.16.2",
+    "http": "^0.0.0",
+    "io": "^1.0.0",
     "left-pad": "^1.2.0",
     "nodemon": "^1.13.3",
     "puppeteer": "^0.13.0",

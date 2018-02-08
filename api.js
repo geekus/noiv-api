@@ -15,16 +15,134 @@ var connection;
 
 const r = require('rethinkdb');
 
-function alertFilter(list) {
-  return list.filter(item => item.iv > 80);
-};
-
 function startExpress(conn) {
-  app.get('/spawns', function(req, res){
+  app.use(function(req, res, next) {
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
+    next();
+  });
+
+  app.post('/spawns', (req, res, next) => {
+
+  });
+
+  app.put('/spawns/:id', (req, res, next) => {
+
+  });
+
+  io.on('connection', function(socket) {
+    socket.emit('news', { hello: 'world2' });
+
+    socket.on('filter change', (data) => {
+      const minIv = data.minIv || 80;
+      const include = data.include;
+      const exclude = data.exclude;
+
+      let filter = r.row('expire_time').gt(Date.now());
+
+      filter = filter.and(r.row('iv').gt(minIv));
+
+      if (include) {
+        include.forEach((i) => {
+          filter = filter.or(r.row('pokemon_id').eq(i.pokemon_id));
+        });
+      }
+
+      r.db('noiv')
+        .table('spawns')
+        .filter(filter)
+        .limit(1000)
+        .run(conn, (err, cursor) => {
+          if (err) throw err;
+
+          cursor.toArray((err, result) => {
+            if (err) throw err;
+
+            socket.emit('update', result.map((s) => (
+              Object.assign(s, {
+                geojson: {
+                  type: 'Point',
+                  coordinates: [s.lon, s.lat]
+                },
+                icon: `${leftPad(s.pokemon_id, 3, '0')}-${s.pokemon_name.toLowerCase()}`
+              })
+            )));
+          });
+      });
+    });
+
+    socket.on('my other event', function(data) {
+      const minIv = data.minIv || 80;
+      const include = data.include;
+      const exclude = data.exclude;
+
+      let filter = r.row('expire_time').gt(Date.now());
+
+      filter = filter.and(r.row('iv').gt(minIv));
+
+      r.db('noiv')
+        .table('spawns')
+        .filter(filter)
+        .limit(1000)
+        .run(conn, (err, cursor) => {
+          if (err) throw err;
+
+          cursor.toArray((err, result) => {
+            if (err) throw err;
+
+            socket.emit('update', result.map((s) => (
+              Object.assign(s, {
+                geojson: {
+                  type: 'Point',
+                  coordinates: [s.lon, s.lat]
+                },
+                icon: `${leftPad(s.pokemon_id, 3, '0')}-${s.pokemon_name.toLowerCase()}`
+              })
+            )));
+          });
+      });
+    });
+
+
+    // On table changes
+    r.db('noiv').table('spawns')
+      .changes()
+      .run(conn, function(err, cursor){
+        if (err) throw err;
+
+        cursor.each(function(err, row) {
+          if (err) throw err;
+
+          const s = row.new_val;
+
+          socket.emit('spawn added',
+            Object.assign(s, {
+              geojson: {
+                type: 'Point',
+                coordinates: [s.lon, s.lat]
+              },
+              icon: `${leftPad(s.pokemon_id, 3, '0')}-${s.pokemon_name.toLowerCase()}`
+            })
+          );
+
+        });
+      });
+
+  });
+
+  app.get('/spawns', function(req, res) {
     res.header('Content-Type', 'application/json');
+
+    const iv = req.params.iv;
+
+    // if (iv[0] === '>') {
+    //
+    // }
+
     r.db('noiv')
       .table('spawns')
       .filter(r.row('expire_time').gt(Date.now()))
+      .limit(20)
       .run(conn, (err, cursor) => {
         if (err) throw err;
 
@@ -40,27 +158,17 @@ function startExpress(conn) {
     res.header("Content-Type", "application/json");
 
     Object.keys(pokemons).forEach(id => {
-      pokemons[id].icon = `require('./resources/icons/pokemons/png/2x/${leftPad(id, 3, '0')}-${pokemons[id].name.toLowerCase()}.png)`;
+      pokemons[id].icon = `${leftPad(id, 3, '0')}-${pokemons[id].name.toLowerCase()}`;
+      pokemons[id].id = Number(id);
     });
 
     res.send(pokemons);
   });
 
-  r.db('noiv').table('spawns')
-    .changes()
-    .run(conn, function(err, cursor){
-      if (err) throw err;
-      io.sockets.on('connection', function(socket){
-        cursor.each(function(err, row) {
-          if(err) throw err;
-          io.sockets.emit('spawns_updated', row);
-        });
-      });
-  });
-
   server.listen(3000);
 }
 
+// const host = 'rethinkdb.eple.me' || process.env.RETHINK_PORT_28015_TCP_ADDR || 'rethinkdb';
 const host = process.env.RETHINK_PORT_28015_TCP_ADDR || 'rethinkdb';
 const port = process.env.RETHINK_PORT_28015_TCP_PORT || '28015';
 const db = process.env.RETHINK_PORT_28015_TCP_DB || 'noiv';

@@ -36,7 +36,7 @@ function startScanning(conn) {
           const spawns = json.pokemons
             .filter(p => p.spawn_id)
             .map(s => {
-              return Object.assign({}, s, {id: s.encounter_id});
+              return Object.assign({}, s, {id: s.spawn_id});
             });
 
           if (spawns.length) {
